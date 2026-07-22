@@ -9,6 +9,7 @@ Available now:
     energyforge migrate    — apply Alembic migrations against TimescaleDB
     energyforge seed-demo  — generate synthetic fleet history (incl. WT-07 scenario)
     energyforge seed-memory — load equipment manuals + RCAs into Chroma
+    energyforge ask "..."  — run one orchestrator turn (agents + HITL gate)
 """
 
 from __future__ import annotations
@@ -89,6 +90,22 @@ def seed_memory() -> None:
 
     added = asyncio.run(VectorStore().seed_default_corpus())
     console.print(f"[green]✓[/green] vector memory seeded with {added} documents")
+
+
+@app.command("ask")
+def ask(
+    query: str = typer.Argument(..., help="Operator request, e.g. 'WT-07 shows elevated vibration'"),
+    asset: list[str] = typer.Option([], "--asset", "-a", help="Pin asset id(s)"),
+) -> None:
+    """Run one full orchestrator turn (agents + HITL gate) and print the answer."""
+    from orchestrator import run_turn
+
+    state = asyncio.run(run_turn(query, assets=asset or None))
+    console.print()
+    console.print(state["final_response"] or "(no response composed)")
+    if state["requires_hitl"]:
+        console.print(f"\n[yellow]HITL triggered:[/yellow] {state['hitl_queue']}")
+    console.print(f"[dim]trace_id={state['trace_id']}[/dim]")
 
 
 def cli_main() -> None:
