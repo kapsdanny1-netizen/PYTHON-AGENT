@@ -169,57 +169,77 @@ class AuditLog(Base):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Engine / session management (process-wide, lazily constructed)
+# Engine / session management (per-event-loop, lazily constructed)
+#
+# asyncpg connections are bound to the event loop that created them. CrewAI
+# executes tools in worker threads (each with its own loop) and pytest-asyncio
+# gives every test a fresh loop — so ONE global engine would poison subsequent
+# loops with "attached to a different loop" failures. We therefore key the
+# engine/session-factory caches by running loop identity.
 # ─────────────────────────────────────────────────────────────────────────────
 
-_engine: AsyncEngine | None = None
-_session_factory: async_sessionmaker[AsyncSession] | None = None
+_engines: dict[int, tuple[asyncio.AbstractEventLoop, AsyncEngine]] = {}
+_session_factories: dict[int, async_sessionmaker[AsyncSession]] = {}
+
+
+def _running_loop() -> asyncio.AbstractEventLoop:
+    try:
+        return asyncio.get_running_loop()
+    except RuntimeError as exc:
+        raise DatabaseError("get_engine() requires a running event loop") from exc
 
 
 def get_engine(settings: Settings | None = None) -> AsyncEngine:
-    """Return the process-wide async engine, creating it on first use.
+    """Return the async engine for the CURRENT event loop (created on demand).
 
     The URL embeds credentials — never log it (we only ever log host/db).
     """
-    global _engine
-    if _engine is None:
+    loop = _running_loop()
+    key = id(loop)
+    entry = _engines.get(key)
+    if entry is None or entry[0] is not loop:
         cfg = settings or get_settings()
-        _engine = create_async_engine(
+        engine = create_async_engine(
             cfg.database_url,
             pool_size=cfg.db_pool_size,
             max_overflow=cfg.db_pool_max_overflow,
             pool_pre_ping=True,
             echo=False,
         )
+        _engines[key] = (loop, engine)
         logger.info(
             "db.engine_created",
             host=cfg.postgres_host,
             port=cfg.postgres_port,
             database=cfg.postgres_db,
         )
-    return _engine
+    return _engines[key][1]
 
 
 def get_session_factory(settings: Settings | None = None) -> async_sessionmaker[AsyncSession]:
-    """Return the process-wide async session factory."""
-    global _session_factory
-    if _session_factory is None:
-        _session_factory = async_sessionmaker(
+    """Return the async session factory for the CURRENT event loop."""
+    loop = _running_loop()
+    key = id(loop)
+    factory = _session_factories.get(key)
+    if factory is None:
+        factory = async_sessionmaker(
             bind=get_engine(settings),
             class_=AsyncSession,
             expire_on_commit=False,
             autoflush=False,
         )
-    return _session_factory
+        _session_factories[key] = factory
+    return factory
 
 
 async def dispose_engine() -> None:
-    """Dispose pooled connections — primarily for tests crossing event loops."""
-    global _engine, _session_factory
-    if _engine is not None:
-        await _engine.dispose()
-    _engine = None
-    _session_factory = None
+    """Dispose the engine bound to the CURRENT loop — test hygiene helper."""
+    loop = _running_loop()
+    key = id(loop)
+    entry = _engines.pop(key, None)
+    _session_factories.pop(key, None)
+    if entry is not None:
+        await entry[1].dispose()
 
 
 @asynccontextmanager
