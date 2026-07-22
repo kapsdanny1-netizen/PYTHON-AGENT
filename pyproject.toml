@@ -1,0 +1,116 @@
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[project]
+name = "energyforge-agent"
+version = "0.1.0"
+description = "EnergyForge Agent — autonomous multi-agent system for industrial energy operations"
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "Apache-2.0" }
+authors = [{ name = "EnergyForge Team" }]
+keywords = ["multi-agent", "energy", "crewai", "langgraph", "predictive-maintenance", "anomaly-detection"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Operating System :: OS Independent",
+]
+# All dependencies pinned to 2025-stable releases.
+dependencies = [
+    # ── Core runtime ────────────────────────────────────────────────
+    "pydantic==2.11.7",
+    "pydantic-settings==2.10.1",
+    "structlog==25.4.0",
+    "tenacity==9.1.2",
+    "python-dotenv==1.1.1",
+    "typer==0.16.0",
+    "rich==14.0.0",
+    "httpx==0.28.1",
+    # ── LLM providers (OpenAI + Grok share the OpenAI-compatible SDK) ──
+    "openai==1.93.0",
+    "anthropic==0.57.1",
+    "ollama==0.5.1",
+    # ── Agent frameworks ────────────────────────────────────────────
+    "crewai==0.134.0",
+    "langgraph==0.5.3",
+    # ── Data layer ──────────────────────────────────────────────────
+    "sqlalchemy[asyncio]==2.0.41",
+    "asyncpg==0.30.0",
+    "psycopg[binary]==3.2.9",
+    "alembic==1.16.2",
+    "chromadb-client==1.0.15",
+    "onnxruntime==1.22.0",      # vector-store embeddings (chroma DefaultEmbeddingFunction)
+    "redis==6.2.0",
+    # ── Numerical / ML ──────────────────────────────────────────────
+    "polars==1.31.0",
+    "pandas==2.3.1",
+    "numpy==2.3.1",
+    "scipy==1.16.0",
+    "scikit-learn==1.7.0",
+    "prophet==1.1.7",
+    "xgboost==3.0.2",
+    # ── Reporting ───────────────────────────────────────────────────
+    "jinja2==3.1.6",
+    "markdown==3.7",
+    "weasyprint==66.0",
+    # ── Dashboard ───────────────────────────────────────────────────
+    "streamlit==1.46.0",
+    "plotly==6.2.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest==8.4.1",
+    "pytest-asyncio==1.0.0",
+    "pytest-timeout==2.4.0",
+    "pypdf==5.6.0",
+    "ruff==0.12.4",
+    "mypy==1.16.1",
+]
+
+[project.scripts]
+energyforge = "main:cli_main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["agents", "config", "dashboard", "data", "memory", "orchestrator", "tools"]
+
+# Top-level single-file modules (cross-cutting infra). In editable installs the
+# repo root lands on sys.path regardless; force-include keeps sdist/wheel honest.
+[tool.hatch.build.targets.wheel.force-include]
+"exceptions.py" = "exceptions.py"
+"logging_config.py" = "logging_config.py"
+"main.py" = "main.py"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "module"
+asyncio_default_test_loop_scope = "module"
+addopts = "-ra"
+markers = [
+    "integration: end-to-end scenarios that exercise the full pipeline with real LLM calls",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+extend-exclude = ["memory/alembic/versions"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "ASYNC", "S", "RUF", "C90"]
+ignore = ["S101"]  # assert statements are fine in tests
+
+[tool.ruff.lint.mccabe]
+max-complexity = 12
+
+[tool.mypy]
+python_version = "3.12"
+files = ["agents", "config", "dashboard", "data", "memory", "orchestrator", "tools", "exceptions.py", "logging_config.py", "main.py"]
+plugins = ["pydantic.mypy"]
+disallow_untyped_defs = true
+warn_return_any = true
+warn_unused_configs = true
+ignore_missing_imports = true
