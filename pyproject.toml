@@ -41,6 +41,7 @@ dependencies = [
     "psycopg[binary]==3.2.9",
     "alembic==1.16.2",
     "chromadb-client==1.0.15",
+    "onnxruntime==1.22.0",      # vector-store embeddings (chroma DefaultEmbeddingFunction)
     "redis==6.2.0",
     # ── Numerical / ML ──────────────────────────────────────────────
     "polars==1.31.0",

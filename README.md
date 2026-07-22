@@ -4,18 +4,21 @@ Production-grade autonomous multi-agent system for industrial energy operations
 (wind turbines, solar inverters, gas turbines, HV transformers).
 
 > **Build status:** this project is constructed in strict phases.
-> ✅ **Phase 0 — project scaffold** (this commit).
+> ✅ **Phase 0 — project scaffold** · ✅ **Phase 1 — shared data layer**.
 >
 > The full README — quick-start, architecture diagram, env-var reference
 > table, and agent extension guide — ships with the final phase.
 
-## Phase 0 — verify the scaffold
+## Verify the scaffold + data layer
 
 ```bash
 cp .env.example .env                  # fill in your LLM provider key
 docker compose up -d db chroma redis  # infrastructure (TimescaleDB, Chroma, Redis)
 pip install -e ".[dev]"               # install the package + dev tools
 python main.py check                  # validate configuration (fails fast)
+python main.py migrate                # apply Alembic migration 0001_initial
+python main.py seed-demo              # synthetic fleet history incl. WT-07 anomaly
+python main.py seed-memory            # manuals + historical RCAs → Chroma
 ```
 
 ## Layout
