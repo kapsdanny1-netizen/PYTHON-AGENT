@@ -87,7 +87,8 @@ packages = ["agents", "config", "dashboard", "data", "memory", "orchestrator", "
 testpaths = ["tests"]
 pythonpath = ["."]
 asyncio_mode = "auto"
-asyncio_default_fixture_loop_scope = "function"
+asyncio_default_fixture_loop_scope = "module"
+asyncio_default_test_loop_scope = "module"
 addopts = "-ra"
 markers = [
     "integration: end-to-end scenarios that exercise the full pipeline with real LLM calls",

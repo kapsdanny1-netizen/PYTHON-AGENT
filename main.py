@@ -10,6 +10,7 @@ Available now:
     energyforge seed-demo  — generate synthetic fleet history (incl. WT-07 scenario)
     energyforge seed-memory — load equipment manuals + RCAs into Chroma
     energyforge ask "..."  — run one orchestrator turn (agents + HITL gate)
+    energyforge bootstrap  — migrate + seed-demo + seed-memory in one step
 """
 
 from __future__ import annotations
@@ -106,6 +107,26 @@ def ask(
     if state["requires_hitl"]:
         console.print(f"\n[yellow]HITL triggered:[/yellow] {state['hitl_queue']}")
     console.print(f"[dim]trace_id={state['trace_id']}[/dim]")
+
+
+@app.command()
+def bootstrap() -> None:
+    """One-command demo bootstrap: schema + fleet data + vector memory."""
+    from data.generators import GenerateRequest, generate_and_store
+    from memory.db import run_migrations
+    from memory.vector_store import VectorStore
+
+    asyncio.run(run_migrations())
+    console.print("[green]✓[/green] schema migrated")
+    summary = asyncio.run(generate_and_store(GenerateRequest()))
+    console.print(f"[green]✓[/green] fleet seeded: {summary.total_rows} rows")
+    try:
+        added = asyncio.run(VectorStore().seed_default_corpus())
+        console.print(f"[green]✓[/green] vector memory seeded: {added} documents")
+    except Exception as exc:  # Chroma optional for the first demo pass
+        console.print(f"[yellow]![/yellow] vector memory skipped ({type(exc).__name__}) — "
+                      "diagnostics runs without RCA grounding")
+    console.print("[bold]Bootstrap complete → streamlit run dashboard/app.py[/bold]")
 
 
 def cli_main() -> None:

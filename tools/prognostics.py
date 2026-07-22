@@ -150,11 +150,13 @@ def _compute_rul(
     ds = epoch_s[first]
     y = np.array([values[bucket == b].mean() for b in bucket[first]])
 
-    hours = (epoch_s[-1] - epoch_s[0]) / 3600.0
+    # Full-window trend + recent trend, both in units/hour (cadence-agnostic).
     slope_per_hour = float(np.polyfit((epoch_s - epoch_s[0]) / 3600.0, values, 1)[0])
-    recent = values[-min(24, len(values)):]
-    slope_recent = float(np.polyfit(np.arange(len(recent)), recent, 1)[0]) * (
-        hours / max(1, len(recent))
+    recent_n = min(24, len(values))
+    recent_t = (epoch_s[-recent_n:] - epoch_s[-recent_n]) / 3600.0
+    recent_v = values[-recent_n:]
+    slope_recent = (
+        float(np.polyfit(recent_t, recent_v, 1)[0]) if recent_t[-1] > 0 else 0.0
     )
     daily_amp = float(values.std())
     features = np.array([values[-1], slope_recent, slope_per_hour,
