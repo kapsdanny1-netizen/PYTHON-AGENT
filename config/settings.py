@@ -5,10 +5,13 @@ from environment variables, conventionally provided via a local `.env` file
 (see `.env.example` for the fully documented reference).
 
 LLM routing is controlled by a *single* variable, ``LLM_PROVIDER``, which
-selects one of: ``openai | anthropic | grok | ollama``. Provider credentials
-and model defaults are resolved centrally by :meth:`Settings.llm_runtime`,
-which fails fast with :class:`~exceptions.ConfigurationError` when the
-selected provider requires a key that is not configured.
+selects one of: ``openai | anthropic | grok | ollama | custom``. Provider
+credentials and model defaults are resolved centrally by
+:meth:`Settings.llm_runtime`, which fails fast with
+:class:`~exceptions.ConfigurationError` when the selected provider requires a
+key that is not configured. The ``custom`` provider targets any
+OpenAI-compatible gateway you control (Arena AI-hosted endpoint, corporate
+LiteLLM proxy, local vLLM/Ollama, …) and can run **keyless**.
 """
 
 from __future__ import annotations
@@ -32,6 +35,10 @@ class LLMProvider(StrEnum):
     ANTHROPIC = "anthropic"
     GROK = "grok"
     OLLAMA = "ollama"
+    # Any OpenAI-compatible gateway you control: an Arena AI-hosted endpoint,
+    # a corporate LiteLLM proxy, local vLLM, etc. — no vendor API key needed
+    # beyond whatever the gateway itself expects (often none).
+    CUSTOM = "custom"
 
 
 class Environment(StrEnum):
@@ -47,6 +54,7 @@ PROVIDER_DEFAULT_MODELS: dict[LLMProvider, str] = {
     LLMProvider.ANTHROPIC: "claude-sonnet-4-20250514",
     LLMProvider.GROK: "grok-3",
     LLMProvider.OLLAMA: "llama3.1:8b",
+    LLMProvider.CUSTOM: "",  # no default — LLM_MODEL is mandatory for custom gateways
 }
 
 # Providers that cannot operate without an API key (Ollama runs locally).
@@ -99,6 +107,14 @@ class Settings(BaseSettings):
     grok_base_url: str = "https://api.x.ai/v1"
     ollama_base_url: str = "http://localhost:11434"
 
+    # ── Custom OpenAI-compatible gateway (LLM_PROVIDER=custom) ─────────
+    # Arena AI-hosted endpoint, corporate LiteLLM proxy, local vLLM, etc.
+    # Base URL + model are REQUIRED for this provider; the API key is
+    # OPTIONAL (leave unset for keyless gateways).
+    custom_llm_base_url: str | None = None
+    custom_llm_model: str = ""
+    custom_llm_api_key: SecretStr | None = None
+
     # ── TimescaleDB / PostgreSQL ────────────────────────────────────────
     postgres_host: str = "localhost"
     postgres_port: int = Field(default=5432, ge=1, le=65535)
@@ -136,6 +152,8 @@ class Settings(BaseSettings):
         "openai_api_key",
         "anthropic_api_key",
         "grok_api_key",
+        "custom_llm_api_key",
+        "custom_llm_base_url",
         "slack_webhook_url",
         mode="before",
     )
@@ -176,6 +194,8 @@ class Settings(BaseSettings):
     @property
     def resolved_llm_model(self) -> str:
         """Explicitly configured model, falling back to the provider default."""
+        if self.llm_provider is LLMProvider.CUSTOM:
+            return self.llm_model or self.custom_llm_model
         return self.llm_model or PROVIDER_DEFAULT_MODELS[self.llm_provider]
 
     def llm_runtime(self) -> LLMRuntimeConfig:
@@ -200,6 +220,21 @@ class Settings(BaseSettings):
                 key, base_url = self.grok_api_key, self.grok_base_url
             case LLMProvider.OLLAMA:
                 key, base_url = None, self.ollama_base_url
+            case LLMProvider.CUSTOM:
+                key, base_url = self.custom_llm_api_key, self.custom_llm_base_url
+                if base_url is None:
+                    raise ConfigurationError(
+                        "LLM_PROVIDER='custom' requires CUSTOM_LLM_BASE_URL — "
+                        "point it at your OpenAI-compatible gateway (e.g. your "
+                        "Arena AI-hosted endpoint: https://<host>/v1).",
+                        context={"provider": "custom", "missing_env": "CUSTOM_LLM_BASE_URL"},
+                    )
+                if not self.resolved_llm_model:
+                    raise ConfigurationError(
+                        "LLM_PROVIDER='custom' requires a model name — set "
+                        "LLM_MODEL or CUSTOM_LLM_MODEL.",
+                        context={"provider": "custom", "missing_env": "CUSTOM_LLM_MODEL"},
+                    )
 
         if provider in _PROVIDERS_REQUIRING_KEY and key is None:
             env_var = f"{provider.value.upper()}_API_KEY"

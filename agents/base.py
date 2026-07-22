@@ -44,6 +44,9 @@ _LITELLM_PREFIX: dict[LLMProvider, str] = {
     LLMProvider.ANTHROPIC: "anthropic",
     LLMProvider.GROK: "xai",
     LLMProvider.OLLAMA: "ollama",
+    # Custom gateways speak the OpenAI protocol — the "openai/" prefix with
+    # an overridden base_url is how LiteLLM addresses them.
+    LLMProvider.CUSTOM: "openai",
 }
 
 
@@ -75,6 +78,10 @@ def build_llm(settings: Settings | None = None) -> object:
     }
     if runtime.api_key:
         kwargs["api_key"] = runtime.api_key
+    elif runtime.provider is LLMProvider.CUSTOM:
+        # LiteLLM's openai/ route insists on *some* api_key string even when
+        # the gateway itself is keyless — a harmless placeholder satisfies it.
+        kwargs["api_key"] = "no-key"
     if runtime.base_url:
         kwargs["base_url"] = runtime.base_url
     return LLM(**kwargs)
@@ -94,7 +101,7 @@ async def llm_complete(
     cfg = settings or get_settings()
     runtime = cfg.llm_runtime()
     try:
-        if runtime.provider in (LLMProvider.OPENAI, LLMProvider.GROK):
+        if runtime.provider in (LLMProvider.OPENAI, LLMProvider.GROK, LLMProvider.CUSTOM):
             from openai import AsyncOpenAI
 
             client = AsyncOpenAI(

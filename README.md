@@ -88,6 +88,23 @@ tests/                    WT-07 end-to-end scenario (a–f assertions)
 main.py                   typer CLI: check/migrate/seed-demo/seed-memory/ask/bootstrap
 ```
 
+## No API keys? No problem.
+
+`LLM_PROVIDER=custom` runs the entire system through **any OpenAI-compatible
+gateway you control** — an Arena AI-hosted endpoint, a corporate LiteLLM
+proxy, or a local vLLM/Ollama server — with **zero vendor API keys**:
+
+```bash
+# .env
+LLM_PROVIDER=custom
+CUSTOM_LLM_BASE_URL=https://<your-gateway-host>/v1
+CUSTOM_LLM_MODEL=<model-the-gateway-serves>
+```
+
+Fully offline alternative: `LLM_PROVIDER=ollama` + `ollama pull llama3.1:8b`.
+`python main.py check` validates whichever route you pick, failing fast with
+the exact missing variable if something's absent.
+
 ## Environment variable reference
 
 | Variable | Required | Default | Purpose |
@@ -102,6 +119,9 @@ main.py                   typer CLI: check/migrate/seed-demo/seed-memory/ask/boo
 | `ANTHROPIC_API_KEY` | ✅ if provider=anthropic | — | Anthropic auth |
 | `GROK_API_KEY` | ✅ if provider=grok | — | xAI auth (`GROK_BASE_URL=https://api.x.ai/v1`) |
 | `OLLAMA_BASE_URL` | — | `http://localhost:11434` | local Ollama (no key; `ollama pull llama3.1:8b`) |
+| `CUSTOM_LLM_BASE_URL` | ✅ if provider=custom | — | OpenAI-compatible gateway URL (…/v1) — Arena AI endpoint, LiteLLM proxy, vLLM |
+| `CUSTOM_LLM_MODEL` | ✅ if provider=custom | — | model name served by the gateway |
+| `CUSTOM_LLM_API_KEY` | — | — | only if the gateway enforces auth |
 | `POSTGRES_HOST/PORT/USER/DB` | ✅ | localhost values | TimescaleDB connection (compose overrides host→`db`) |
 | `POSTGRES_PASSWORD` | ✅ | `energyforge` | DB auth — change beyond local dev |
 | `DB_POOL_SIZE` / `DB_POOL_MAX_OVERFLOW` | — | `10` / `10` | asyncpg pool |
