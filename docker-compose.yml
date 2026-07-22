@@ -1,0 +1,111 @@
+name: energyforge
+
+# Local runtime stack for EnergyForge Agent.
+#
+#   db      — PostgreSQL 16 + TimescaleDB (hypertables: sensor_readings, anomaly_events, …)
+#   chroma  — ChromaDB vector store (equipment manuals, historical RCAs)
+#   redis   — task queue / cache / HITL approval channel
+#   app     — EnergyForge runtime (Streamlit dashboard entrypoint; built from ./Dockerfile)
+#
+# Boot infrastructure only:   docker compose up -d db chroma redis
+# Boot the whole stack:       docker compose up -d --build
+
+services:
+  db:
+    image: timescale/timescaledb:2.17.2-pg16
+    container_name: energyforge-db
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-energyforge}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-energyforge}
+      POSTGRES_DB: ${POSTGRES_DB:-energyforge}
+      TZ: UTC
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - timescale_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 10s
+    networks: [energyforge]
+    restart: unless-stopped
+
+  chroma:
+    image: chromadb/chroma:1.0.15
+    container_name: energyforge-chroma
+    environment:
+      IS_PERSISTENT: "TRUE"
+      ANONYMIZED_TELEMETRY: "FALSE"
+      CHROMA_SERVER_NOFILE: "65535"
+    command: ["--path", "/data"]
+    ports:
+      - "${CHROMA_PORT:-8000}:8000"
+    volumes:
+      - chroma_data:/data
+    healthcheck:
+      # stdlib-only check — the Chroma image has no curl.
+      test:
+        - CMD-SHELL
+        - >-
+          python -c "import urllib.request,sys;
+          sys.exit(0 if urllib.request.urlopen('http://localhost:8000/api/v2/heartbeat').status == 200 else 1)"
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 15s
+    networks: [energyforge]
+    restart: unless-stopped
+
+  redis:
+    image: redis:8.0-alpine
+    container_name: energyforge-redis
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli ping | grep -q PONG"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    networks: [energyforge]
+    restart: unless-stopped
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: energyforge-app
+    env_file:
+      - .env # copy from .env.example first: cp .env.example .env
+    environment:
+      # Compose-network DNS names override the localhost defaults from .env.
+      # (The `environment:` block takes precedence over `env_file`.)
+      POSTGRES_HOST: db
+      CHROMA_HOST: chroma
+      REDIS_URL: redis://redis:6379/0
+    ports:
+      - "8501:8501"
+    volumes:
+      - ./reports:/app/reports # generated PDFs land on the host
+    depends_on:
+      db:
+        condition: service_healthy
+      chroma:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks: [energyforge]
+    restart: unless-stopped
+
+networks:
+  energyforge:
+    driver: bridge
+
+volumes:
+  timescale_data:
+  chroma_data:
+  redis_data:
